@@ -26,6 +26,9 @@ class DDIMSampler(object):
         self.ddim_timesteps = make_ddim_timesteps(ddim_discr_method=ddim_discretize, num_ddim_timesteps=ddim_num_steps,
                                                   num_ddpm_timesteps=self.ddpm_num_timesteps,verbose=verbose)
         alphas_cumprod = self.model.alphas_cumprod
+        # HACK: Allow higher ddim_timesteps
+        if len(self.ddim_timesteps) >= alphas_cumprod.shape[0]:
+            self.ddim_timesteps = self.ddim_timesteps[0 : alphas_cumprod.shape[0] - 1]
         assert alphas_cumprod.shape[0] == self.ddpm_num_timesteps, 'alphas have to be defined for each timestep'
         to_torch = lambda x: x.clone().detach().to(torch.float32).to(self.model.device)
 
