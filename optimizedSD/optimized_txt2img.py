@@ -224,74 +224,82 @@ else:
         data = list(chunk(data, batch_size))
 
 
-precision_scope = autocast if opt.precision=="autocast" else nullcontext
-with torch.no_grad():
+while True:
+    prompt = None
+    while not prompt:
+        prompt = input("Enter a prompt: ")
+    assert prompt is not None
+    print(f'Generating: "{prompt}"')
+    data = [batch_size * [prompt]]
 
-    all_samples = list()
-    for n in trange(opt.n_iter, desc="Sampling"):
-        for prompts in tqdm(data, desc="data"):
-             with precision_scope("cuda"):
-                modelCS.to(device)
-                uc = None
-                if opt.scale != 1.0:
-                    uc = modelCS.get_learned_conditioning(batch_size * [""])
-                if isinstance(prompts, tuple):
-                    prompts = list(prompts)
-                
-                c = modelCS.get_learned_conditioning(prompts)
-                shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
-                mem = torch.cuda.memory_allocated()/1e6
-                modelCS.to("cpu")
-                while(torch.cuda.memory_allocated()/1e6 >= mem):
-                    time.sleep(1)
+    precision_scope = autocast if opt.precision=="autocast" else nullcontext
+    with torch.no_grad():
 
+        all_samples = list()
+        for n in trange(opt.n_iter, desc="Sampling"):
+            for prompts in tqdm(data, desc="data"):
+                 with precision_scope("cuda"):
+                    modelCS.to(device)
+                    uc = None
+                    if opt.scale != 1.0:
+                        uc = modelCS.get_learned_conditioning(batch_size * [""])
+                    if isinstance(prompts, tuple):
+                        prompts = list(prompts)
 
-                samples_ddim = model.sample(S=opt.ddim_steps,
-                                conditioning=c,
-                                batch_size=opt.n_samples,
-                                shape=shape,
-                                verbose=False,
-                                unconditional_guidance_scale=opt.scale,
-                                unconditional_conditioning=uc,
-                                eta=opt.ddim_eta,
-                                x_T=start_code)
-
-                modelFS.to(device)
-                print("saving images")
-                for i in range(batch_size):
-                    
-                    x_samples_ddim = modelFS.decode_first_stage(samples_ddim[i].unsqueeze(0))
-                    x_sample = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
-                # for x_sample in x_samples_ddim:
-                    x_sample = 255. * rearrange(x_sample[0].cpu().numpy(), 'c h w -> h w c')
-                    Image.fromarray(x_sample.astype(np.uint8)).save(
-                        os.path.join(sample_path, f"{base_count:05}.png"))
-                    base_count += 1
+                    c = modelCS.get_learned_conditioning(prompts)
+                    shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
+                    mem = torch.cuda.memory_allocated()/1e6
+                    modelCS.to("cpu")
+                    while(torch.cuda.memory_allocated()/1e6 >= mem):
+                        time.sleep(1)
 
 
-                mem = torch.cuda.memory_allocated()/1e6
-                modelFS.to("cpu")
-                while(torch.cuda.memory_allocated()/1e6 >= mem):
-                    time.sleep(1)
+                    samples_ddim = model.sample(S=opt.ddim_steps,
+                                    conditioning=c,
+                                    batch_size=opt.n_samples,
+                                    shape=shape,
+                                    verbose=False,
+                                    unconditional_guidance_scale=opt.scale,
+                                    unconditional_conditioning=uc,
+                                    eta=opt.ddim_eta,
+                                    x_T=start_code)
 
-                # if not opt.skip_grid:
-                #     all_samples.append(x_samples_ddim)
-                del samples_ddim
-                print("memory_final = ", torch.cuda.memory_allocated()/1e6)
+                    modelFS.to(device)
+                    print("saving images")
+                    for i in range(batch_size):
 
-        # if not skip_grid:
-        #     # additionally, save as grid
-        #     grid = torch.stack(all_samples, 0)
-        #     grid = rearrange(grid, 'n b c h w -> (n b) c h w')
-        #     grid = make_grid(grid, nrow=n_rows)
+                        x_samples_ddim = modelFS.decode_first_stage(samples_ddim[i].unsqueeze(0))
+                        x_sample = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
+                    # for x_sample in x_samples_ddim:
+                        x_sample = 255. * rearrange(x_sample[0].cpu().numpy(), 'c h w -> h w c')
+                        Image.fromarray(x_sample.astype(np.uint8)).save(
+                            os.path.join(sample_path, f"{base_count:05}.png"))
+                        base_count += 1
 
-        #     # to image
-        #     grid = 255. * rearrange(grid, 'c h w -> h w c').cpu().numpy()
-        #     Image.fromarray(grid.astype(np.uint8)).save(os.path.join(outpath, f'grid-{grid_count:04}.png'))
-        #     grid_count += 1
 
-toc = time.time()
+                    mem = torch.cuda.memory_allocated()/1e6
+                    modelFS.to("cpu")
+                    while(torch.cuda.memory_allocated()/1e6 >= mem):
+                        time.sleep(1)
 
-time_taken = (toc-tic)/60.0
+                    # if not opt.skip_grid:
+                    #     all_samples.append(x_samples_ddim)
+                    del samples_ddim
+                    print("memory_final = ", torch.cuda.memory_allocated()/1e6)
 
-print(("Your samples are ready in {0:.2f} minutes and waiting for you here \n" + sample_path).format(time_taken))
+            # if not skip_grid:
+            #     # additionally, save as grid
+            #     grid = torch.stack(all_samples, 0)
+            #     grid = rearrange(grid, 'n b c h w -> (n b) c h w')
+            #     grid = make_grid(grid, nrow=n_rows)
+
+            #     # to image
+            #     grid = 255. * rearrange(grid, 'c h w -> h w c').cpu().numpy()
+            #     Image.fromarray(grid.astype(np.uint8)).save(os.path.join(outpath, f'grid-{grid_count:04}.png'))
+            #     grid_count += 1
+
+    toc = time.time()
+
+    time_taken = (toc-tic)/60.0
+
+    print(("Your samples are ready in {0:.2f} minutes and waiting for you here \n" + sample_path).format(time_taken))
